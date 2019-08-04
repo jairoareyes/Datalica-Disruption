@@ -2,41 +2,40 @@
 #include <PubSubClient.h> // https://github.com/knolleary/pubsubclient/releases/tag/v2.3
 #include <ArduinoJson.h> // https://github.com/bblanchon/ArduinoJson/releases/tag/v5.0.7
 
-//-------- Customise these values -----------
+#define ORG "auqt74"
+#define DEVICE_TYPE "SabanaHack"
+#define DEVICE_ID "IOTSiemens"
+#define TOKEN "!66cd6aCIrfaY4*o0-"
+#define pinTempSensor A0
+#define pinMotor 12
 const char* ssid = "SabanaHack";
 const char* password = "Sabana.2019";
-
-#define ORG "pmimyr"
-#define DEVICE_TYPE "IOTSabana"
-#define DEVICE_ID "NodeIOT"
-#define TOKEN "sm66*e?L*ZPiZTtTP?"
-//-------- Customise the above values --------
 
 char server[] = ORG ".messaging.internetofthings.ibmcloud.com";
 char authMethod[] = "use-token-auth";
 char token[] = TOKEN;
 char clientId[] = "d:" ORG ":" DEVICE_TYPE ":" DEVICE_ID;
-
+int tempValue=0;
 const char eventTopic[] = "iot-2/evt/status/fmt/json";
 const char cmdTopic[] = "iot-2/cmd/led/fmt/json";
 
-
-
 WiFiClient wifiClient;
 void callback(char* topic, byte* payload, unsigned int payloadLength) {
+  int data = *payload;
+  int pwm;
+  data = (data-48)*10;//convierte en int el ascii
+  pwm = map(data, 1, 100, 50, 100);
+  analogWrite(pinMotor,pwm);
   Serial.print("Message arrived [");
   Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < payloadLength; i++) {
-    Serial.print((char)payload[i]);
-  }
+  Serial.println("] ");
+  Serial.print("Info: ");
+  Serial.print(pwm,DEC);	
   Serial.println();
 
   // Switch on the LED if an 1 was received as first character
   if (payload[0] == '1') {
-    digitalWrite(BUILTIN_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is acive low on the ESP-01)
+    digitalWrite(BUILTIN_LED, LOW); 
   } else {
     digitalWrite(BUILTIN_LED, HIGH);  // Turn the LED off by making the voltage HIGH
   }
@@ -44,19 +43,21 @@ void callback(char* topic, byte* payload, unsigned int payloadLength) {
 }
 PubSubClient client(server, 1883, callback, wifiClient);
 
-int publishInterval = 5000; // 5 seconds//Send adc every 5sc
+int publishInterval = 2000; // 5 seconds//Send adc every 5sc
 long lastPublishMillis;
 
 void setup() {
   Serial.begin(9600); Serial.println();
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(pinMotor, OUTPUT);
   wifiConnect();
   mqttConnect();
 }
 
 void loop() {
   if (millis() - lastPublishMillis > publishInterval) {
-    publishData();
+	tempValue = calculateTemp(analogRead(pinTempSensor));
+    publishData(tempValue);
     lastPublishMillis = millis();
   }
 
@@ -93,18 +94,17 @@ void mqttConnect() {
 }
 
 
-void publishData() {
-  // read the input on analog pin 0:
-  //int sensorValue = analogRead(A0);
-
-  String payload = "{\"d\":{\"sp02\":";
-  //payload += String(sensorValue, DEC);
-  payload += String("95");
+void publishData(float temp) {
+  String payload = "{\"d\":{\"luz\":";
+  payload += String("30");
+  payload += String(",\"temp\":");
+  payload += String((int)round(temp), DEC);
+  payload += String(",\"hum\":");
+  payload += String("50");
+  payload += String(",\"power\":");
+  payload += String("70");
   payload += "}}";
 
-  String payload2 = "{\"d\":{\"bpm\":";
-  payload2 += String("65");
-  payload2 += "}}";
 
   Serial.print("Sending payload: "); Serial.println(payload);
 
@@ -114,13 +114,12 @@ void publishData() {
     Serial.println("Publish FAILED");
   }
 
-  delay(100);
-  
-  Serial.print("Sending payload2: "); Serial.println(payload2);
+}
 
-  if (client.publish(eventTopic, (char*) payload2.c_str())) {
-    Serial.println("Publish 2 OK");
-  } else {
-    Serial.println("Publish FAILED");
-  }
+int calculateTemp(float adcValue){
+	adcValue = (adcValue/1024) * 1000; //3300 is the voltage provided by NodeMCU
+	adcValue = adcValue/10;
+	// adcValue = adcValue ;
+	adcValue=(int)round(adcValue);
+	return adcValue;
 }
